@@ -5,6 +5,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    /* Transaction type colors */
+    .type-pemasukan td { color: #198754; }
+    .type-pengeluaran td { color: #dc3545; }
+    /* Saldo colors */
+    .saldo-positive { color: #198754; }
+    .saldo-negative { color: #dc3545; }
+  </style>
   <title>Kas RW Dashboard</title>
 </head>
 
@@ -54,8 +63,17 @@
                     </td>
                   </tr>
                   <tr>
+                    <td><label for="tanggal" class="form-label">Tanggal</label></td>
+                    <td><input type="date" id="tanggal" class="form-control" required /></td>
+                  </tr>
+                  <tr>
                     <td><label for="nominal" class="form-label">Nominal</label></td>
-                    <td><input type="number" id="nominal" class="form-control" placeholder="Nominal" required /></td>
+                    <td>
+                      <div class="input-group">
+                        <span class="input-group-text">Rp.</span>
+                        <input type="number" id="nominal" class="form-control" placeholder="Nominal" required />
+                      </div>
+                    </td>
                   </tr>
                   <tr>
                     <td><label for="keterangan" class="form-label">Keterangan</label></td>
@@ -85,6 +103,7 @@
               <table class="table table-striped align-middle">
                 <thead class="table-light">
                   <tr>
+                    <th>Tanggal</th>
                     <th>Jenis</th>
                     <th>Keterangan</th>
                     <th>Nominal</th>
@@ -105,31 +124,48 @@
     const saldoElement = document.getElementById("saldo");
     const tableBody = document.getElementById("transactionTable");
     const form = document.getElementById("transactionForm");
+    const tanggalElement = document.getElementById("tanggal");
 
-    let transactions = [
-      { jenis: "Pemasukan", nominal: 500000, keterangan: "Iuran Warga" },
-      { jenis: "Pengeluaran", nominal: 150000, keterangan: "Perbaikan Lampu" }
-    ];
+    let transactions = [];
+
+    tanggalElement.value = new Date().toISOString().split('T')[0];
+
+    async function fetchTransactions() {
+      try {
+        const response = await fetch('/api/transaksi');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        transactions = await response.json();
+        renderTransactions();
+      } catch (error) {
+        console.error("Error fetching transactions:", error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Gagal memuat transaksi. Periksa koneksi ke server.'
+        });
+      }
+    }
 
     function renderTransactions() {
       tableBody.innerHTML = "";
       let saldo = 0;
 
       transactions.forEach((trx) => {
-        saldo += trx.jenis === "Pemasukan" ? trx.nominal : -trx.nominal;
+        saldo += trx.jenis === "pemasukan" ? trx.jumlah : -trx.jumlah;
 
         const row = document.createElement("tr");
+        row.classList.add(trx.jenis === 'pemasukan' ? 'type-pemasukan' : 'type-pengeluaran');
         row.innerHTML = `
-          <td class="${trx.jenis === 'Pemasukan' ? 'text-success fw-bold' : 'text-danger fw-bold'}">
-            ${trx.jenis}
-          </td>
+          <td>${new Date(trx.tanggal).toLocaleDateString("id-ID")}</td>
+          <td>${trx.jenis}</td>
           <td>${trx.keterangan}</td>
-          <td>Rp ${trx.nominal.toLocaleString("id-ID")}</td>
+          <td><span class="badge ${trx.jenis === 'pemasukan' ? 'bg-success text-light' : 'bg-danger text-light'}">Rp ${trx.jumlah.toLocaleString("id-ID")}</span></td>
         `;
         tableBody.appendChild(row);
       });
 
       saldoElement.innerText = "Rp " + saldo.toLocaleString("id-ID");
+      saldoElement.className = saldo >= 0 ? 'saldo-positive' : 'saldo-negative';
     }
 
     // Handle dropdown selection
@@ -144,14 +180,19 @@
       });
     });
 
-    form.addEventListener("submit", function (e) {
+    form.addEventListener("submit", async function (e) {
       e.preventDefault();
+      const tanggal = document.getElementById("tanggal").value;
       const jenis = document.getElementById("jenis").value;
-      const nominal = parseInt(document.getElementById("nominal").value);
+      const jumlah = parseFloat(document.getElementById("nominal").value);
       let keterangan = document.getElementById("keterangan").value;
 
       if (!jenis) {
-        alert("Silakan pilih jenis transaksi terlebih dahulu.");
+        Swal.fire({
+          icon: 'warning',
+          title: 'Peringatan',
+          text: 'Silakan pilih jenis transaksi terlebih dahulu.'
+        });
         return;
       }
 
@@ -159,14 +200,30 @@
         keterangan = "-";
       }
 
-
-      transactions.unshift({ jenis, nominal, keterangan });
-      renderTransactions();
-      form.reset();
-      document.getElementById('jenisDropdown').textContent = "Pilih Jenis";
+      try {
+        const response = await fetch('/api/transaksi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tanggal, jenis, jumlah, keterangan })
+        });
+        
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        form.reset();
+        document.getElementById('jenisDropdown').textContent = "Pilih Jenis";
+        await fetchTransactions();
+      } catch (error) {
+        console.error("Error creating transaction:", error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Gagal menyimpan transaksi.'
+        });
+      }
     });
 
-    renderTransactions();
+    // Load transactions on page load
+    fetchTransactions();
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
