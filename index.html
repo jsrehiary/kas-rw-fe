@@ -55,8 +55,8 @@
                           Pilih Jenis
                         </button>
                         <ul class="dropdown-menu w-100" aria-labelledby="jenisDropdown">
-                          <li><a class="dropdown-item" href="#" data-value="Pemasukan">Pemasukan</a></li>
-                          <li><a class="dropdown-item" href="#" data-value="Pengeluaran">Pengeluaran</a></li>
+                          <li><a class="dropdown-item" href="#" data-value="pemasukan">Pemasukan</a></li>
+                          <li><a class="dropdown-item" href="#" data-value="pengeluaran">Pengeluaran</a></li>
                         </ul>
                       </div>
                       <input type="hidden" id="jenis" required>
@@ -81,10 +81,16 @@
                     </td>
                   </tr>
                   <tr>
-                    <td colspan="2">
-                      <button type="submit" class="btn btn-primary w-100 fw-bold">
-                        Simpan Transaksi
-                      </button>
+                    <td><input type="hidden" id="transactionId"></td>
+                    <td>
+                      <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary fw-bold">
+                          Simpan Transaksi
+                        </button>
+                        <button type="button" class="btn btn-secondary fw-bold d-none" id="cancelEditButton">
+                          Batal Edit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -107,6 +113,7 @@
                     <th>Jenis</th>
                     <th>Keterangan</th>
                     <th>Nominal</th>
+                    <th>Aksi</th>
                   </tr>
                 </thead>
                 <tbody id="transactionTable"></tbody>
@@ -125,10 +132,40 @@
     const tableBody = document.getElementById("transactionTable");
     const form = document.getElementById("transactionForm");
     const tanggalElement = document.getElementById("tanggal");
+    const jenisDropdownBtn = document.getElementById("jenisDropdown");
+    const jenisInput = document.getElementById("jenis");
+    const transactionIdInput = document.getElementById("transactionId");
+    const cancelEditButton = document.getElementById("cancelEditButton");
+    const submitButton = form.querySelector('button[type="submit"]');
 
     let transactions = [];
 
     tanggalElement.value = new Date().toISOString().split('T')[0];
+
+    function resetForm() {
+      form.reset();
+      transactionIdInput.value = "";
+      jenisInput.value = "";
+      jenisDropdownBtn.textContent = "Pilih Jenis";
+      submitButton.textContent = "Simpan Transaksi";
+      cancelEditButton.classList.add('d-none');
+      tanggalElement.value = new Date().toISOString().split('T')[0];
+    }
+
+    function setJenis(value, text) {
+      jenisInput.value = value;
+      jenisDropdownBtn.textContent = text;
+    }
+
+    function fillForm(trx) {
+      transactionIdInput.value = trx.id;
+      tanggalElement.value = new Date(trx.tanggal).toISOString().split('T')[0];
+      setJenis(trx.jenis, trx.jenis === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran');
+      document.getElementById('nominal').value = trx.jumlah;
+      document.getElementById('keterangan').value = trx.keterangan;
+      submitButton.textContent = 'Perbarui Transaksi';
+      cancelEditButton.classList.remove('d-none');
+    }
 
     async function fetchTransactions() {
       try {
@@ -160,6 +197,10 @@
           <td>${trx.jenis}</td>
           <td>${trx.keterangan}</td>
           <td><span class="badge ${trx.jenis === 'pemasukan' ? 'bg-success text-light' : 'bg-danger text-light'}">Rp ${trx.jumlah.toLocaleString("id-ID")}</span></td>
+          <td class="text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-primary me-2" data-action="edit" data-id="${trx.id}">Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete" data-id="${trx.id}">Hapus</button>
+          </td>
         `;
         tableBody.appendChild(row);
       });
@@ -174,10 +215,50 @@
         e.preventDefault();
         const value = this.getAttribute('data-value');
         const text = this.textContent;
-
-        document.getElementById('jenisDropdown').textContent = text;
-        document.getElementById('jenis').value = value;
+        setJenis(value, text);
       });
+    });
+
+    tableBody.addEventListener('click', async function (e) {
+      const button = e.target.closest('button[data-action]');
+      if (!button) return;
+
+      const action = button.getAttribute('data-action');
+      const id = button.getAttribute('data-id');
+      const transaction = transactions.find(t => t.id === Number(id));
+
+      if (action === 'edit' && transaction) {
+        fillForm(transaction);
+      }
+
+      if (action === 'delete') {
+        const result = await Swal.fire({
+          icon: 'warning',
+          title: 'Hapus Transaksi',
+          text: 'Apakah Anda yakin ingin menghapus transaksi ini?',
+          showCancelButton: true,
+          confirmButtonText: 'Ya, hapus',
+          cancelButtonText: 'Batal',
+        });
+
+        if (result.isConfirmed) {
+          try {
+            const response = await fetch(`/api/transaksi/${id}`, {
+              method: 'DELETE',
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            await fetchTransactions();
+            Swal.fire({ icon: 'success', title: 'Dihapus', text: 'Transaksi berhasil dihapus.' });
+          } catch (error) {
+            console.error('Error deleting transaction:', error);
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Gagal menghapus transaksi.' });
+          }
+        }
+      }
+    });
+
+    cancelEditButton.addEventListener('click', function () {
+      resetForm();
     });
 
     form.addEventListener("submit", async function (e) {
@@ -196,22 +277,41 @@
         return;
       }
 
+      if (jumlah <= 0 || Number.isNaN(jumlah)) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Peringatan',
+          text: 'Nominal harus lebih besar dari nol.'
+        });
+        return;
+      }
+
       if (!keterangan.trim()) {
         keterangan = "-";
       }
 
+      const payload = { tanggal, jenis, jumlah, keterangan };
+      const transactionId = transactionIdInput.value;
+
       try {
-        const response = await fetch('/api/transaksi', {
-          method: 'POST',
+        const response = await fetch(transactionId ? `/api/transaksi/${transactionId}` : '/api/transaksi', {
+          method: transactionId ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tanggal, jenis, jumlah, keterangan })
+          body: JSON.stringify(payload)
         });
-        
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
-        form.reset();
-        document.getElementById('jenisDropdown').textContent = "Pilih Jenis";
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+        }
+
+        resetForm();
         await fetchTransactions();
+        Swal.fire({
+          icon: 'success',
+          title: transactionId ? 'Diperbarui' : 'Tersimpan',
+          text: transactionId ? 'Transaksi berhasil diperbarui.' : 'Transaksi berhasil disimpan.'
+        });
       } catch (error) {
         console.error("Error creating transaction:", error);
         Swal.fire({
