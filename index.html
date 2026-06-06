@@ -138,6 +138,10 @@
     const cancelEditButton = document.getElementById("cancelEditButton");
     const submitButton = form.querySelector('button[type="submit"]');
 
+    const apiBaseUrl = window.location.port === '5500'
+      ? 'http://127.0.0.1:8000/api'
+      : '/api';
+
     let transactions = [];
 
     tanggalElement.value = new Date().toISOString().split('T')[0];
@@ -169,7 +173,7 @@
 
     async function fetchTransactions() {
       try {
-        const response = await fetch('/api/transaksi');
+        const response = await fetch(`${apiBaseUrl}/transaksi`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         transactions = await response.json();
         renderTransactions();
@@ -187,23 +191,31 @@
       tableBody.innerHTML = "";
       let saldo = 0;
 
-      transactions.forEach((trx) => {
-        saldo += trx.jenis === "pemasukan" ? trx.jumlah : -trx.jumlah;
-
-        const row = document.createElement("tr");
-        row.classList.add(trx.jenis === 'pemasukan' ? 'type-pemasukan' : 'type-pengeluaran');
-        row.innerHTML = `
-          <td>${new Date(trx.tanggal).toLocaleDateString("id-ID")}</td>
-          <td>${trx.jenis}</td>
-          <td>${trx.keterangan}</td>
-          <td><span class="badge ${trx.jenis === 'pemasukan' ? 'bg-success text-light' : 'bg-danger text-light'}">Rp ${trx.jumlah.toLocaleString("id-ID")}</span></td>
-          <td class="text-nowrap">
-            <button type="button" class="btn btn-sm btn-outline-primary me-2" data-action="edit" data-id="${trx.id}">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete" data-id="${trx.id}">Hapus</button>
-          </td>
+      if (!transactions || transactions.length === 0) {
+        const emptyRow = document.createElement("tr");
+        emptyRow.innerHTML = `
+          <td colspan="5" class="text-center text-muted py-4">Belum ada data</td>
         `;
-        tableBody.appendChild(row);
-      });
+        tableBody.appendChild(emptyRow);
+      } else {
+        transactions.forEach((trx) => {
+          saldo += trx.jenis === "pemasukan" ? trx.jumlah : -trx.jumlah;
+
+          const row = document.createElement("tr");
+          row.classList.add(trx.jenis === 'pemasukan' ? 'type-pemasukan' : 'type-pengeluaran');
+          row.innerHTML = `
+            <td>${new Date(trx.tanggal).toLocaleDateString("id-ID")}</td>
+            <td>${trx.jenis}</td>
+            <td>${trx.keterangan}</td>
+            <td><span class="badge ${trx.jenis === 'pemasukan' ? 'bg-success text-light' : 'bg-danger text-light'}">Rp ${trx.jumlah.toLocaleString("id-ID")}</span></td>
+            <td class="text-nowrap">
+              <button type="button" class="btn btn-sm btn-outline-primary me-2" data-action="edit" data-id="${trx.id}">Edit</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete" data-id="${trx.id}">Hapus</button>
+            </td>
+          `;
+          tableBody.appendChild(row);
+        });
+      }
 
       saldoElement.innerText = "Rp " + saldo.toLocaleString("id-ID");
       saldoElement.className = saldo >= 0 ? 'saldo-positive' : 'saldo-negative';
@@ -243,7 +255,7 @@
 
         if (result.isConfirmed) {
           try {
-            const response = await fetch(`/api/transaksi/${id}`, {
+            const response = await fetch(`${apiBaseUrl}/transaksi/${id}`, {
               method: 'DELETE',
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -294,7 +306,7 @@
       const transactionId = transactionIdInput.value;
 
       try {
-        const response = await fetch(transactionId ? `/api/transaksi/${transactionId}` : '/api/transaksi', {
+        const response = await fetch(transactionId ? `${apiBaseUrl}/transaksi/${transactionId}` : `${apiBaseUrl}/transaksi`, {
           method: transactionId ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
